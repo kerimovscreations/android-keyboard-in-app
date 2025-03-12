@@ -154,7 +154,10 @@ fun CustomKeyboard(
     onComplete: () -> Unit
 ) {
     var uppercased by remember { mutableStateOf(false) }
-    var contentKeyType by remember { mutableStateOf(ContentKeyType.LETTER) }
+    var language by remember { mutableStateOf(KeyboardLanguage.EN) }
+    var contentKeyType by remember(language) {
+        mutableStateOf<ContentKeyType>(ContentKeyType.Letter(language = language))
+    }
 
     Column(
         modifier = Modifier
@@ -170,7 +173,7 @@ fun CustomKeyboard(
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
             KeyboardKeyMap.numberRow.forEach {
-                val key = it.value.toString().first()
+                val key = it.value
                 CharacterButton(
                     char = key,
                     onClick = { onKeyClick(key) },
@@ -248,17 +251,37 @@ fun CustomKeyboard(
                 when (it) {
                     KeyboardKeys.CharacterSwitch -> {
                         val keyText = when (contentKeyType) {
-                            ContentKeyType.LETTER -> "123"
-                            ContentKeyType.SPECIAL_CHARACTER -> "ABC"
+                            is ContentKeyType.Letter -> "?123"
+                            is ContentKeyType.SpecialCharacter -> when (language) {
+                                KeyboardLanguage.AZ -> "ABC"
+                                KeyboardLanguage.EN -> "ABC"
+                                KeyboardLanguage.RU -> "АБВ"
+                            }
                         }
                         TextButton(
                             text = keyText,
                             isRounded = true,
                             onClick = {
-                                contentKeyType = if (contentKeyType == ContentKeyType.LETTER) {
-                                    ContentKeyType.SPECIAL_CHARACTER
+                                contentKeyType = if (contentKeyType is ContentKeyType.Letter) {
+                                    ContentKeyType.SpecialCharacter
                                 } else {
-                                    ContentKeyType.LETTER
+                                    ContentKeyType.Letter(language = language)
+                                }
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                        )
+                    }
+
+                    KeyboardKeys.LanguageSwitch -> {
+                        IconButton(
+                            iconId = R.drawable.ic_language,
+                            isRounded = true,
+                            onClick = {
+                                language = when (language) {
+                                    KeyboardLanguage.AZ -> KeyboardLanguage.EN
+                                    KeyboardLanguage.EN -> KeyboardLanguage.RU
+                                    KeyboardLanguage.RU -> KeyboardLanguage.AZ
                                 }
                             },
                             modifier = Modifier
@@ -306,10 +329,10 @@ fun CustomKeyboard(
 
 @Composable
 fun CharacterButton(
+    modifier: Modifier = Modifier,
     char: Char,
     onClick: () -> Unit,
-    onLongClick: () -> Unit = {},
-    modifier: Modifier = Modifier
+    onLongClick: () -> Unit = {}
 ) {
     KeyButton(
         content = {
@@ -328,11 +351,11 @@ fun CharacterButton(
 
 @Composable
 fun TextButton(
+    modifier: Modifier = Modifier,
     text: String,
     isRounded: Boolean,
     onClick: () -> Unit,
-    onLongClick: () -> Unit = {},
-    modifier: Modifier = Modifier
+    onLongClick: () -> Unit = {}
 ) {
     KeyButton(
         content = {
@@ -352,11 +375,11 @@ fun TextButton(
 
 @Composable
 fun IconButton(
+    modifier: Modifier = Modifier,
     iconId: Int,
     isRounded: Boolean,
     onClick: () -> Unit,
-    onLongClick: () -> Unit = {},
-    modifier: Modifier = Modifier
+    onLongClick: () -> Unit = {}
 ) {
     KeyButton(
         content = {
@@ -378,10 +401,10 @@ fun IconButton(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun KeyButton(
+    modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
     onClick: () -> Unit,
     onLongClick: () -> Unit = {},
-    modifier: Modifier = Modifier,
     isRounded: Boolean = false,
     isTool: Boolean = false
 ) {

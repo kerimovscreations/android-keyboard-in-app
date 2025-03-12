@@ -1,38 +1,55 @@
 package az.test.keyboardinapp
 
-sealed class KeyboardKeys {
-    data class Number(val value: Int) : KeyboardKeys()
-    data class Character(val value: Char) : KeyboardKeys()
-    data object Backspace : KeyboardKeys()
-    data object Space : KeyboardKeys()
-    data object Done : KeyboardKeys()
-    data object CharacterSwitch : KeyboardKeys()
-    data object Shift : KeyboardKeys()
+sealed interface KeyboardKeys {
+    data class Number(val value: Char) : KeyboardKeys
+    data class Character(val value: Char) : KeyboardKeys
+    data object Backspace : KeyboardKeys
+    data object Space : KeyboardKeys
+    data object Done : KeyboardKeys
+    data object CharacterSwitch : KeyboardKeys
+    data object LanguageSwitch : KeyboardKeys
+    data object Shift : KeyboardKeys
 }
 
-enum class ContentKeyType {
-    LETTER,
-    SPECIAL_CHARACTER
+sealed interface ContentKeyType {
+    data class Letter(val language: KeyboardLanguage) : ContentKeyType
+    data object SpecialCharacter : ContentKeyType
+}
+
+enum class KeyboardLanguage {
+    AZ, EN, RU;
 }
 
 object KeyboardKeyMap {
     val numberRow = listOf(
-        KeyboardKeys.Number(1),
-        KeyboardKeys.Number(2),
-        KeyboardKeys.Number(3),
-        KeyboardKeys.Number(4),
-        KeyboardKeys.Number(5),
-        KeyboardKeys.Number(6),
-        KeyboardKeys.Number(7),
-        KeyboardKeys.Number(8),
-        KeyboardKeys.Number(9),
-        KeyboardKeys.Number(0)
+        KeyboardKeys.Number('1'),
+        KeyboardKeys.Number('2'),
+        KeyboardKeys.Number('3'),
+        KeyboardKeys.Number('4'),
+        KeyboardKeys.Number('5'),
+        KeyboardKeys.Number('6'),
+        KeyboardKeys.Number('7'),
+        KeyboardKeys.Number('8'),
+        KeyboardKeys.Number('9'),
+        KeyboardKeys.Number('0')
     )
 
-    private val letters = listOf(
+    private val lettersEn = listOf(
         listOf('q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'),
         listOf('a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l'),
         listOf('z', 'x', 'c', 'v', 'b', 'n', 'm')
+    )
+
+    private val lettersAz = listOf(
+        listOf('q', 'ü', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', 'ö', 'ğ'),
+        listOf('a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', 'ı', 'ə'),
+        listOf('z', 'x', 'c', 'v', 'b', 'n', 'm', 'ç', 'ş')
+    )
+
+    private val lettersRu = listOf(
+        listOf('й', 'ц', 'у', 'к', 'е', 'ё', 'н', 'г', 'ш', 'щ', 'з', 'х'),
+        listOf('ф', 'ы', 'в', 'а', 'п', 'р', 'о', 'л', 'д', 'ж', 'э'),
+        listOf('я', 'ч', 'с', 'м', 'и', 'т', 'ь', 'ъ', 'б', 'ю')
     )
 
     private val specialCharacter = listOf(
@@ -43,17 +60,22 @@ object KeyboardKeyMap {
 
     fun getContentRows(type: ContentKeyType): List<List<KeyboardKeys>> {
         val mainContent = when (type) {
-            ContentKeyType.LETTER -> letters
-            ContentKeyType.SPECIAL_CHARACTER -> specialCharacter
+            is ContentKeyType.Letter -> when (type.language) {
+                KeyboardLanguage.AZ -> lettersAz
+                KeyboardLanguage.EN -> lettersEn
+                KeyboardLanguage.RU -> lettersRu
+            }
+
+            is ContentKeyType.SpecialCharacter -> specialCharacter
         }
 
         return mainContent.mapIndexed { index, row ->
-            if (index != 2) {
+            if (index != mainContent.lastIndex) {
                 row.map { KeyboardKeys.Character(it) }
             } else {
                 val leftKey = when (type) {
-                    ContentKeyType.LETTER -> listOf(KeyboardKeys.Shift)
-                    ContentKeyType.SPECIAL_CHARACTER -> emptyList()
+                    is ContentKeyType.Letter -> listOf(KeyboardKeys.Shift)
+                    is ContentKeyType.SpecialCharacter -> emptyList()
                 }
 
                 leftKey +
@@ -66,6 +88,7 @@ object KeyboardKeyMap {
 
     val utilityRow = listOf(
         KeyboardKeys.CharacterSwitch,
+        KeyboardKeys.LanguageSwitch,
         KeyboardKeys.Space,
         KeyboardKeys.Done
     )
