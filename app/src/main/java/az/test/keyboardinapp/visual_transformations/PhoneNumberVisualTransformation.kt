@@ -44,7 +44,7 @@ class PhoneNumberVisualTransformation() : VisualTransformation {
     }
 
     override fun hashCode(): Int {
-        return mask.hashCode()
+        return 31 * mask.hashCode() + maskNumber.hashCode()
     }
 
     private class PhoneNumberMaskingOffsetMapper(val maxLength: Int, val mask: String, val numberChar: Char) : OffsetMapping {
