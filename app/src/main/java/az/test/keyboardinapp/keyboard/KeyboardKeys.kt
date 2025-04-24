@@ -1,4 +1,6 @@
-package az.test.keyboardinapp
+package az.test.keyboardinapp.keyboard
+
+import androidx.compose.runtime.Stable
 
 sealed interface KeyboardKeys {
     data class Number(val value: Char) : KeyboardKeys
@@ -11,11 +13,17 @@ sealed interface KeyboardKeys {
     data object Shift : KeyboardKeys
 }
 
+@Stable
+enum class KeyboardType {
+    Text, Number, Decimal, PhoneNumber
+}
+
 sealed interface ContentKeyType {
     data class Letter(val language: KeyboardLanguage) : ContentKeyType
     data object SpecialCharacter : ContentKeyType
 }
 
+@Stable
 enum class KeyboardLanguage {
     AZ, EN, RU;
 }
