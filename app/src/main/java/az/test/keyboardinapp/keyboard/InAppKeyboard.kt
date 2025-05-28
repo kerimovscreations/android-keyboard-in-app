@@ -7,13 +7,13 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -30,137 +30,192 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.InterceptPlatformTextInput
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.Clipboard
+import androidx.compose.ui.platform.ClipboardManager
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.vectorResource
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import az.test.keyboardinapp.R
-import kotlinx.coroutines.awaitCancellation
-
-@OptIn(ExperimentalComposeUiApi::class)
-@Composable
-fun DisableSoftKeyboard(
-    disable: Boolean = true,
-    content: @Composable () -> Unit,
-) {
-    InterceptPlatformTextInput(
-        interceptor = { request, nextHandler ->
-            if (!disable) {
-                nextHandler.startInputMethod(request)
-            } else {
-                awaitCancellation()
-            }
-        },
-        content = content,
-    )
-}
 
 @Composable
-fun AnimatedKeyboard(
-    isKeyboardVisible: Boolean,
-    onKeyClick: (Char) -> Unit,
-    onPaste: (String) -> Unit,
-    onBackspace: () -> Unit,
-    onClear: () -> Unit,
+fun InAppKeyboard(
+    modifier: Modifier = Modifier,
+    visible: Boolean,
+    keyboardType: KeyboardType = KeyboardType.Text,
+    textFieldValue: TextFieldValue,
+    onTextFieldValueChange: (TextFieldValue) -> Unit,
     onDone: () -> Unit,
     onClose: () -> Unit,
-    modifier: Modifier = Modifier,
-    keyboardType: KeyboardType = KeyboardType.Text,
-    pasteUsageRule: PasteUsageRule = PasteUsageRule.None,
+    clipboard: Clipboard? = null
 ) {
+    // Ensure the keyboard is dismissed when the back button is pressed
+    BackHandler {
+        onClose()
+    }
+
     AnimatedVisibility(
         modifier = modifier,
-        visible = isKeyboardVisible,
+        visible = visible,
         enter = fadeIn() + expandVertically(),
         exit = fadeOut() + shrinkVertically()
     ) {
-        CustomKeyboard(
-            pasteUsageRule = pasteUsageRule,
-            onKeyClick = onKeyClick,
-            onPaste = onPaste,
-            onBackspace = onBackspace,
-            onClear = onClear,
-            onDone = onDone,
-            onClose = onClose,
-            keyboardType = keyboardType
+        KeyboardLayout(
+            keyboardType = keyboardType,
+            clipboard = clipboard,
+            onKeyClick = { keyChar ->
+                // If there's selected text, replace it with the new character
+                if (textFieldValue.selection.start != textFieldValue.selection.end) {
+                    val textBeforeSelection =
+                        textFieldValue.text.substring(0, textFieldValue.selection.start)
+                    val textAfterSelection =
+                        textFieldValue.text.substring(textFieldValue.selection.end)
+
+                    onTextFieldValueChange(
+                        TextFieldValue(
+                            textBeforeSelection + keyChar + textAfterSelection,
+                            TextRange(textFieldValue.selection.start + 1)
+                        )
+                    )
+                } else {
+                    // Insert at cursor position
+                    val cursorPos = textFieldValue.selection.start
+                    val newText = textFieldValue.text.substring(0, cursorPos) + keyChar +
+                            textFieldValue.text.substring(cursorPos)
+                    onTextFieldValueChange(TextFieldValue(newText, TextRange(cursorPos + 1)))
+                }
+            },
+            onPaste = {
+                val clipboardText = clipboard?.getTextOrNull() ?: return@KeyboardLayout
+                onTextFieldValueChange(
+                    TextFieldValue(
+                        clipboardText,
+                        TextRange(clipboardText.length)
+                    )
+                )
+            },
+            onBackspace = {
+                if (textFieldValue.text.isNotEmpty()) {
+                    // If there's a selection, delete the selected text
+                    if (textFieldValue.selection.start != textFieldValue.selection.end) {
+                        val start =
+                            minOf(textFieldValue.selection.start, textFieldValue.selection.end)
+                        val end =
+                            maxOf(textFieldValue.selection.start, textFieldValue.selection.end)
+                        if (start >= 0 && end <= textFieldValue.text.length) {
+                            val newText = textFieldValue.text.removeRange(start, end)
+                            onTextFieldValueChange(TextFieldValue(newText, TextRange(start)))
+                        }
+                    }
+                    // Otherwise delete the character before the cursor
+                    else if (textFieldValue.selection.end > 0) {
+                        val newText =
+                            textFieldValue.text.substring(0, textFieldValue.selection.end - 1) +
+                                    textFieldValue.text.substring(textFieldValue.selection.end)
+                        onTextFieldValueChange(
+                            TextFieldValue(
+                                newText,
+                                TextRange(textFieldValue.selection.end - 1)
+                            )
+                        )
+                    }
+                }
+            },
+            onClear = {
+                if (textFieldValue.text.isNotEmpty()) {
+                    onTextFieldValueChange(TextFieldValue("", TextRange(0)))
+                }
+            },
+            onDone = onDone
         )
     }
 }
 
 @Composable
-fun CustomKeyboard(
-    pasteUsageRule: PasteUsageRule,
+private fun KeyboardLayout(
     onKeyClick: (Char) -> Unit,
-    onPaste: (String) -> Unit,
+    onPaste: () -> Unit,
     onBackspace: () -> Unit,
     onClear: () -> Unit,
     onDone: () -> Unit,
-    onClose: () -> Unit,
     keyboardType: KeyboardType = KeyboardType.Text,
+    clipboard: Clipboard? = null
 ) {
-    BackHandler {
-        onClose()
-    }
-
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(Color(0xFFE0E0E0))
-            .padding(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 20.dp)
-    )  {
-
-        PasteRuleValidatedContent(
-            rule = pasteUsageRule,
-            clipboardManager = LocalClipboardManager.current
-        ) { text ->
-            ElevatedAssistChip(
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text(text = text) },
-                onClick = { onPaste(text) },
-                trailingIcon = { Icon(painter = painterResource(R.drawable.ic_paste_24), contentDescription = null) },
-                colors = AssistChipDefaults.elevatedAssistChipColors().copy(
-                    containerColor = Color.LightGray,
-                    labelColor = Color.Black,
-                    trailingIconContentColor = Color.Black,
+            .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 20.dp)
+    ) {
+        clipboard?.let {
+            WithClipboardText(
+                clipboard = it,
+            ) { text ->
+                ElevatedAssistChip(
+                    modifier = Modifier
+                        .fillMaxWidth(),
+                    label = {
+                        Text(
+                            text = text,
+                            modifier =
+                                Modifier
+                                    .padding(top = 2.dp, bottom = 2.dp)
+                        )
+                    },
+                    onClick = { onPaste() },
+                    trailingIcon = {
+                        Box(
+                            modifier = Modifier.padding(4.dp)
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_paste_24),
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    },
+                    colors = AssistChipDefaults.elevatedAssistChipColors().copy(
+                        containerColor = Color.LightGray,
+                        labelColor = Color.Black,
+                        trailingIconContentColor = Color.Black,
+                    )
                 )
-            )
+            }
         }
-
 
         when (keyboardType) {
             KeyboardType.Text -> {
                 TextKeyboard(
                     onKeyClick = onKeyClick,
                     onBackspace = onBackspace,
-                    onComplete = onDone,
-                    onClear = onClear
+                    onClear = onClear,
+                    onComplete = onDone
                 )
             }
 
-            KeyboardType.Number, KeyboardType.Decimal, KeyboardType.PhoneNumber -> NumberKeyboard(
-                onKeyClick = onKeyClick,
-                onBackspace = onBackspace,
-                onComplete = onDone,
-                onClear = onClear,
-                keyboardType = keyboardType
-            )
+            is KeyboardType.Numeric ->
+                NumberKeyboard(
+                    type = keyboardType.type,
+                    onKeyClick = onKeyClick,
+                    onBackspace = onBackspace,
+                    onComplete = onDone,
+                    onClear = onClear
+                )
         }
     }
-
 }
 
 @Composable
-private fun ColumnScope.TextKeyboard(
+private fun TextKeyboard(
     onKeyClick: (Char) -> Unit,
     onBackspace: () -> Unit,
     onClear: () -> Unit,
@@ -333,35 +388,31 @@ private fun ColumnScope.TextKeyboard(
 }
 
 @Composable
-private fun ColumnScope.NumberKeyboard(
-    keyboardType: KeyboardType,
+private fun NumberKeyboard(
+    type: NumericKeyboardType,
     onKeyClick: (Char) -> Unit,
     onBackspace: () -> Unit,
     onComplete: () -> Unit,
     onClear: () -> Unit,
 ) {
-    require(
-        value = keyboardType != KeyboardType.Text,
-        lazyMessage = { "Unsupported keyboard type: $keyboardType" }
-    )
 
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.Bottom
     ) {
         Column(
-            modifier = Modifier.weight(5f)
+            modifier = Modifier.weight(3f),
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 6.dp),
+                    .padding(vertical = 4.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
                 (1..3).forEach {
                     val key = it.toString().first()
-                    CharacterButton(
+                    NumberButton(
                         char = key,
                         onClick = { onKeyClick(key) },
                         modifier = Modifier
@@ -373,12 +424,12 @@ private fun ColumnScope.NumberKeyboard(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 6.dp),
+                    .padding(vertical = 2.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
                 (4..6).forEach {
                     val key = it.toString().first()
-                    CharacterButton(
+                    NumberButton(
                         char = key,
                         onClick = { onKeyClick(key) },
                         modifier = Modifier
@@ -390,12 +441,12 @@ private fun ColumnScope.NumberKeyboard(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 6.dp),
+                    .padding(vertical = 2.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
                 (7..9).forEach {
                     val key = it.toString().first()
-                    CharacterButton(
+                    NumberButton(
                         char = key,
                         onClick = { onKeyClick(key) },
                         modifier = Modifier
@@ -407,45 +458,42 @@ private fun ColumnScope.NumberKeyboard(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 6.dp),
+                    .padding(vertical = 2.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
-                val isDecimal = keyboardType == KeyboardType.Decimal
-                val isPhoneNumber = keyboardType == KeyboardType.PhoneNumber
+                val isDecimal = type == NumericKeyboardType.Decimal
+                val isPhoneNumber = type == NumericKeyboardType.PhoneNumber
 
-                val spaceChar = ' '
                 val zeroKey = '0'
                 val pointKey = '.'
                 val plusKey = '+'
 
-                CharacterButton(
-                    char = if (isPhoneNumber) plusKey else spaceChar,
+                NumberButton(
+                    char = plusKey,
                     onClick = { if (isPhoneNumber) onKeyClick(plusKey) },
                     modifier = Modifier.weight(1f),
-                    isEnabled = isPhoneNumber
+                    isEnabled = true
                 )
 
-                CharacterButton(
+                NumberButton(
                     char = zeroKey,
                     onClick = { onKeyClick(zeroKey) },
                     modifier = Modifier.weight(1f)
                 )
 
-                CharacterButton(
-                    char = if (isDecimal) pointKey else spaceChar,
+                NumberButton(
+                    char = pointKey,
                     onClick = { if (isDecimal) onKeyClick(pointKey) },
-                    modifier = Modifier.weight(1f),
-                    isEnabled = isDecimal
+                    modifier = Modifier.weight(1f)
                 )
-
             }
         }
 
         Column(
             modifier = Modifier
                 .weight(1f)
-                .padding(vertical = 6.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Bottom)
+                .padding(bottom = 2.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.Bottom)
         ) {
             IconButton(
                 iconId = R.drawable.ic_backspace,
@@ -454,6 +502,8 @@ private fun ColumnScope.NumberKeyboard(
                 onLongClick = onClear,
                 modifier = Modifier
                     .fillMaxWidth()
+                    .height(48.dp)
+                    .clip(RoundedCornerShape(24.dp))
             )
 
             IconButton(
@@ -462,6 +512,8 @@ private fun ColumnScope.NumberKeyboard(
                 onClick = onComplete,
                 modifier = Modifier
                     .fillMaxWidth()
+                    .height(48.dp)
+                    .clip(RoundedCornerShape(24.dp))
             )
         }
     }
@@ -488,6 +540,33 @@ fun CharacterButton(
         onLongClick = onLongClick,
         modifier = modifier,
         isEnabled = isEnabled
+    )
+}
+
+@Composable
+fun NumberButton(
+    char: Char,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    onLongClick: () -> Unit = {},
+    isEnabled: Boolean = true,
+) {
+    KeyButton(
+        content = {
+            Text(
+                text = char.toString(),
+                fontSize = 22.sp,
+                color = Color.Black,
+                fontWeight = FontWeight.Medium
+            )
+        },
+        onClick = onClick,
+        onLongClick = onLongClick,
+        modifier = modifier
+            .height(48.dp)
+            .clip(RoundedCornerShape(24.dp)),
+        isEnabled = isEnabled,
+        isRounded = true
     )
 }
 
@@ -544,7 +623,6 @@ fun IconButton(
     )
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun KeyButton(
     modifier: Modifier = Modifier,
@@ -558,7 +636,7 @@ fun KeyButton(
     val view = LocalView.current
 
     Box(
-        modifier = modifier
+        modifier = Modifier
             .padding(horizontal = 2.dp)
             .height(44.dp)
             .clip(if (isRounded) RoundedCornerShape(22.dp) else RoundedCornerShape(4.dp))
@@ -570,9 +648,12 @@ fun KeyButton(
                 },
                 onLongClick = {
                     onLongClick()
-                }
+                },
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
             )
-            .background(if (isTool) Color.LightGray else Color.White),
+            .background(if (isTool) Color.LightGray else Color.White)
+            .then(modifier),
         contentAlignment = Alignment.Center
     ) {
         content()
@@ -582,61 +663,57 @@ fun KeyButton(
 @Preview
 @Composable
 private fun KeyboardDefaultPrev() {
-
-    CustomKeyboard(
+    KeyboardLayout(
         onKeyClick = {},
         onPaste = {},
         onBackspace = {},
         onClear = {},
         onDone = {},
-        onClose = {},
-        keyboardType = KeyboardType.Text,
-        pasteUsageRule = PasteUsageRule.None
+        keyboardType = KeyboardType.Text
     )
 }
 
 @Preview
 @Composable
 private fun KeyboardNumberPrev() {
-
-    CustomKeyboard(
+    KeyboardLayout(
         onKeyClick = {},
         onPaste = {},
         onBackspace = {},
         onClear = {},
         onDone = {},
-        onClose = {},
-        keyboardType = KeyboardType.Number,
-        pasteUsageRule = PasteUsageRule.None
+        keyboardType = KeyboardType.Numeric(
+            type = NumericKeyboardType.Number
+        ),
     )
 }
 
 @Preview
 @Composable
 private fun KeyboardDecimalPrev() {
-    CustomKeyboard(
+    KeyboardLayout(
         onKeyClick = {},
         onPaste = {},
         onBackspace = {},
         onClear = {},
         onDone = {},
-        onClose = {},
-        keyboardType = KeyboardType.Decimal,
-        pasteUsageRule = PasteUsageRule.None
+        keyboardType = KeyboardType.Numeric(
+            type = NumericKeyboardType.Decimal
+        )
     )
 }
 
 @Preview
 @Composable
 private fun KeyboardPhonePrev() {
-    CustomKeyboard(
+    KeyboardLayout(
         onKeyClick = {},
         onPaste = {},
         onBackspace = {},
         onClear = {},
         onDone = {},
-        onClose = {},
-        keyboardType = KeyboardType.PhoneNumber,
-        pasteUsageRule = PasteUsageRule.None
+        keyboardType = KeyboardType.Numeric(
+            type = NumericKeyboardType.PhoneNumber
+        ),
     )
 }

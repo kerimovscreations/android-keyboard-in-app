@@ -14,8 +14,15 @@ sealed interface KeyboardKeys {
 }
 
 @Stable
-enum class KeyboardType {
-    Text, Number, Decimal, PhoneNumber
+sealed class KeyboardType {
+    data object Text: KeyboardType()
+    data class Numeric(
+        val type: NumericKeyboardType = NumericKeyboardType.Number,
+    ) : KeyboardType()
+}
+
+enum class NumericKeyboardType {
+    Number, Decimal, PhoneNumber
 }
 
 sealed interface ContentKeyType {
